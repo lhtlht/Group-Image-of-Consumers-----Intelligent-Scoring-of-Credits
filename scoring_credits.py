@@ -16,6 +16,10 @@ def metrics_mae(label, score):
         sum += abs(int(round(l))-s)
     return 1.0/(1+sum/len(label))
 
+def minmax_adjust(m_list):
+    m_sum = sum(m_list)
+    return [i/m_sum for i in m_list]
+
 def feature_processing(train):
     train['用户当月消费是否低于近6个月'] = train.apply(lambda row: 1 if row['用户账单当月总费用（元）'] > row['用户近6个月平均消费值（元）'] else 0, axis=1)
     train['用户余额能支持月数'] = train.apply(lambda row: row['用户当月账户余额（元）'] / (row['用户近6个月平均消费值（元）'] + 1.0), axis=1)
@@ -114,60 +118,118 @@ if __name__ == "__main__":
     )
     is_model = False
     if is_model:
-        y_score_seed = []
+
+        y_test_seed = []
         y_train_seed = []
-        for seed in [5,10,20,40,80,100,200,400]:
+        y_test_score = []
+        y_train_score = []
+        seeds = range(1,1000,25)
+        for seed in seeds:
             model_train_seed, model_test_seed, model_label_seed, model_score_seed = train_test_split(model_train, model_label, train_size=0.9,random_state=seed)
-            clf.fit(model_train_seed, model_label_seed, eval_set=[(model_train_seed, model_label_seed), (model_test_seed, model_score_seed)], early_stopping_rounds=200, verbose=-1,eval_metric="l1")
+            clf.fit(model_train_seed, model_label_seed, eval_set=[(model_train_seed, model_label_seed), (model_test_seed, model_score_seed)], early_stopping_rounds=200, verbose=-1,eval_metric="l2")
             #print(list(clf.feature_importances_))
             #print(model_train.columns)
             y_predict = clf.predict(model_test, num_iteration=clf.best_iteration_)
-            y_score_seed.append(y_predict)
+            print(clf.best_score_)
+            y_test_seed.append(y_predict)
+            y_train_score.append(clf.best_score_['training']['l2'])
+            y_test_score.append(clf.best_score_['valid_1']['l2'])
             print(metrics_mae(y_predict.tolist(),list(model_score)))
             y_train = clf.predict(model_train, num_iteration=clf.best_iteration_)
             y_train_seed.append(y_train)
             print(metrics_mae(y_train.tolist(), list(model_label)))
             print(metrics_mae(y_train.tolist(), list(model_label)) - metrics_mae(y_predict.tolist(),list(model_score)))
-        y_narray = np.array(y_score_seed).mean(axis=0)
-        y_trainarray = np.array(y_train_seed).mean(axis=0)
+        #计算权重
+        y_train_w_sum = sum(y_train_score)
+        y_test_w_sum = sum(y_test_score)
+        y_train_w = np.array(minmax_adjust([y_train_w_sum/i for i in y_train_score])).reshape(len(seeds),1)
+        y_test_w = np.array(minmax_adjust([y_test_w_sum/i for i in y_test_score])).reshape(len(seeds),1)
+        print("权重总和：",y_train_w.sum())
+        #y_narray = np.array(y_test_seed).mean(axis=0)
+        #y_trainarray = np.array(y_train_seed).mean(axis=0)
+
+        y_narray = (np.array(y_test_seed) * y_test_w).sum(axis=0)
+        y_trainarray = (np.array(y_train_seed) * y_train_w).sum(axis=0)
+
+
+        print("最终cv结果")
         print(metrics_mae(y_narray.tolist(), list(model_score)))
         print(metrics_mae(y_trainarray.tolist(), list(model_label)))
         print(metrics_mae(y_trainarray.tolist(), list(model_label)) - metrics_mae(y_narray.tolist(), list(model_score)))
 
+        '''
+        clf.fit(model_train, model_label,eval_set=[(model_train, model_label), (model_test, model_score)],early_stopping_rounds=200, verbose=-1, eval_metric="l2")
+        y_predict = clf.predict(model_test, num_iteration=clf.best_iteration_)
+        print(metrics_mae(y_predict.tolist(), list(model_score)))
+        y_train = clf.predict(model_train, num_iteration=clf.best_iteration_)
+        print(metrics_mae(y_train.tolist(), list(model_label)))
+        print(metrics_mae(y_train.tolist(), list(model_label)) - metrics_mae(y_predict.tolist(), list(model_score)))
+        '''
     else:
         label = train['信用分']
         train.drop("信用分", axis=1, inplace=True)
-        y_score_seed = []
+        y_test_seed = []
         y_train_seed = []
-        for seed in [5, 10, 20, 40, 80, 100, 200, 400]:
-            clf.fit(model_train, model_label, eval_set=[(model_train, model_label), (model_test, model_score)],early_stopping_rounds=200, verbose=-1, eval_metric="l1")
+        y_test_score = []
+        y_train_score = []
+        seeds = range(1, 1000, 25)
+        for seed in seeds:
+            clf.fit(model_train, model_label, eval_set=[(model_train, model_label), (model_test, model_score)],early_stopping_rounds=200, verbose=-1, eval_metric="l2")
             #test['信用分'] = clf.predict(test_data)
             y_predict = clf.predict(test_data, num_iteration=clf.best_iteration_)
-            y_score_seed.append(y_predict)
-            model_train, model_test, model_label, model_score = train_test_split(train, label, train_size=0.8,random_state=seed)
+            y_test_seed.append(y_predict)
+            y_train_score.append(clf.best_score_['training']['l2'])
+            y_test_score.append(clf.best_score_['valid_1']['l2'])
+            model_train, model_test, model_label, model_score = train_test_split(train, label, train_size=0.9,random_state=seed)
+        y_train_w_sum = sum(y_train_score)
+        y_test_w_sum = sum(y_test_score)
+        y_train_w = np.array(minmax_adjust([y_train_w_sum / i for i in y_train_score])).reshape(len(seeds), 1)
+        y_test_w = np.array(minmax_adjust([y_test_w_sum / i for i in y_test_score])).reshape(len(seeds), 1)
+        print("权重总和：", y_train_w.sum())
         print("ok")
-        test['信用分'] = np.array(y_score_seed).mean(axis=0)
+        #test['信用分'] = np.array(y_test_seed).mean(axis=0)
+        test['信用分'] = (np.array(y_test_seed) * y_test_w).sum(axis=0)
         data_submit = pd.DataFrame()
         data_submit['id'] = test['用户编码']
         data_submit['score'] = test.apply(lambda row: int(round(row.信用分)), axis=1)
-        data_submit.to_csv("submit/sc_lgb_0224_v1.csv", encoding="utf-8", index=False)
+        data_submit.to_csv("submit/sc_lgb_0224_v2.csv", encoding="utf-8", index=False)
 
-#0.06383820844451821
-#0.06385410613829522
-#0.0638936809149575
-#0.06389858017354855
-#0.06391287397020382
-#0.06393698370885655
 
-# 0.06393698370885655
-# 0.0710482097627345
-# 0.007111226053877956
 
-# 0.06387409139104996
-# 0.0694562616556289
-# 0.0055821702645789395
-
-#最优
+#最优 cv种子 l1
 # 0.06392063613817085
 # 0.06913979721297478
 # 0.005219161074803927
+
+        # 0.06392758283416546   l2
+        # 0.0689245190360906
+        # 0.004996936201925151
+
+        # 0.063921044725555
+        # 0.06874482265554376
+        # 0.004823777929988754
+
+        # 0.06389980510559443
+        # 0.06851274251369827
+        # 0.00461293740810384
+
+        # 0.06390470530345149
+        # 0.06848247961362185
+        # 0.004577774310170354
+        #runage(25) 无权重
+        # 0.06393453104021482
+        # 0.06860486854449625
+        # 0.004670337504281433
+        #加权
+        # 0.06393534857552043
+        # 0.06862311157774827
+        # 0.0046877630022278405
+
+
+# l1 0.06393698370885655
+# 0.0710482097627345
+# 0.007111226053877956
+
+# l2 0.06391287397020382
+# 0.06932360954170161
+# 0.005410735571497793
