@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 import os
 import sys
+import warnings
+warnings.filterwarnings("ignore")
 from sklearn.model_selection import train_test_split
 import lightgbm as lgb
 from sklearn.preprocessing import MinMaxScaler
@@ -57,7 +59,9 @@ def feature_processing(train):
     # stacking_y = pd.read_csv('xgb_stacking_y.csv', encoding="utf-8")
     # train['stacking_y'] = minMax.fit_transform(stacking_y[['xgb_stacking_y']])
     train['用户年龄归一化'] = std.fit_transform(train[['用户年龄']])
+    train['current_fee_stability2'] = std.fit_transform(train[['current_fee_stability']])
     train.drop("用户年龄", axis=1, inplace=True)
+    train.drop("current_fee_stability", axis=1, inplace=True)
     train.drop("是否黑名单客户", axis=1, inplace=True)
 
     return train
@@ -76,29 +80,20 @@ if __name__ == "__main__":
       dtype='object')
     '''
     #print(train.describe())
-    #print(train[['用户实名制是否通过核实']].groupby("用户实名制是否通过核实").size())
     # print(train[['当月旅游资讯类应用使用次数','信用分']].groupby("当月旅游资讯类应用使用次数").mean())
-    # print(train[['当月旅游资讯类应用使用次数', '信用分']].groupby("当月旅游资讯类应用使用次数").size())
-    # sys.exit(-1)
-    #train.apply(lambda row: int(round(row.信用分)), axis=1)
-    # print(train.isnull().any())
+    #print(train[['当月旅游资讯类应用使用次数', '信用分']].groupby("当月旅游资讯类应用使用次数").size())
+    #print(train['当月旅游资讯类应用使用次数'].quantile(0.8))
     # from matplotlib import pyplot as plt
     # fig, ax = plt.subplots()
-    # ax.scatter(x=train['当月通话交往圈人数'], y=train['信用分'])
+    # ax.scatter(x=train['当月火车类应用使用次数'], y=train['当月旅游资讯类应用使用次数'])
     # plt.ylabel('当月通话交往圈人数', fontsize=5)
     # plt.xlabel('信用分', fontsize=5)
     # plt.show()
-
-    # col_list = list(train.columns)
-    # for col in col_list:
-    #     print(col)
-    #     if (col=="用户编码"):
-    #         continue
-    #     print(train[col].skew())
     #sys.exit(-1)
 
     train = feature_processing(train)
     train.drop("用户编码", axis=1, inplace=True)
+    #print(train.corr())
     test = feature_processing(test)
 
 
@@ -114,57 +109,62 @@ if __name__ == "__main__":
         boosting_type='gbdt', num_leaves=31, reg_alpha=0.0, reg_lambda=2,
         max_depth=7, n_estimators=10000, objective='regression',
         subsample=0.7, colsample_bytree=0.7, subsample_freq=1,
-        learning_rate=0.01, min_child_weight=50, random_state=2018, n_jobs=-1, max_bin=250
+        learning_rate=0.01, random_state=2018, n_jobs=-1, max_bin=250,
+        min_child_weight=5,min_child_samples=10
     )
     is_model = False
+    is_cv_seed = False
     if is_model:
+        if is_cv_seed:
+            y_test_seed = []
+            y_train_seed = []
+            y_test_score = []
+            y_train_score = []
+            seeds = range(1,1000,25)
+            for seed in seeds:
+                model_train_seed, model_test_seed, model_label_seed, model_score_seed = train_test_split(model_train, model_label, train_size=0.9,random_state=seed)
+                clf.fit(model_train_seed, model_label_seed, eval_set=[(model_train_seed, model_label_seed), (model_test_seed, model_score_seed)], early_stopping_rounds=200, verbose=-1,eval_metric="l2")
+                #print(list(clf.feature_importances_))
+                #print(model_train.columns)
+                y_predict = clf.predict(model_test, num_iteration=clf.best_iteration_)
+                print(clf.best_score_)
+                y_test_seed.append(y_predict)
+                y_train_score.append(clf.best_score_['training']['l2'])
+                y_test_score.append(clf.best_score_['valid_1']['l2'])
+                print(metrics_mae(y_predict.tolist(),list(model_score)))
+                y_train = clf.predict(model_train, num_iteration=clf.best_iteration_)
+                y_train_seed.append(y_train)
+                print(metrics_mae(y_train.tolist(), list(model_label)))
+                print(metrics_mae(y_train.tolist(), list(model_label)) - metrics_mae(y_predict.tolist(),list(model_score)))
+            #计算权重
+            y_train_w_sum = sum(y_train_score)
+            y_test_w_sum = sum(y_test_score)
+            y_train_w = np.array(minmax_adjust([y_train_w_sum/i for i in y_train_score])).reshape(len(seeds),1)
+            y_test_w = np.array(minmax_adjust([y_test_w_sum/i for i in y_test_score])).reshape(len(seeds),1)
+            print("权重总和：",y_train_w.sum())
+            #y_narray = np.array(y_test_seed).mean(axis=0)
+            #y_trainarray = np.array(y_train_seed).mean(axis=0)
 
-        y_test_seed = []
-        y_train_seed = []
-        y_test_score = []
-        y_train_score = []
-        seeds = range(1,1000,25)
-        for seed in seeds:
-            model_train_seed, model_test_seed, model_label_seed, model_score_seed = train_test_split(model_train, model_label, train_size=0.9,random_state=seed)
-            clf.fit(model_train_seed, model_label_seed, eval_set=[(model_train_seed, model_label_seed), (model_test_seed, model_score_seed)], early_stopping_rounds=200, verbose=-1,eval_metric="l2")
-            #print(list(clf.feature_importances_))
-            #print(model_train.columns)
+            y_narray = (np.array(y_test_seed) * y_test_w).sum(axis=0)
+            y_trainarray = (np.array(y_train_seed) * y_train_w).sum(axis=0)
+
+
+            print("最终cv结果")
+            print(metrics_mae(y_narray.tolist(), list(model_score)))
+            print(metrics_mae(y_trainarray.tolist(), list(model_label)))
+            print(metrics_mae(y_trainarray.tolist(), list(model_label)) - metrics_mae(y_narray.tolist(), list(model_score)))
+
+        else:
+
+            clf.fit(model_train, model_label,eval_set=[(model_train, model_label), (model_test, model_score)],early_stopping_rounds=200, verbose=-1, eval_metric="l2")
             y_predict = clf.predict(model_test, num_iteration=clf.best_iteration_)
-            print(clf.best_score_)
-            y_test_seed.append(y_predict)
-            y_train_score.append(clf.best_score_['training']['l2'])
-            y_test_score.append(clf.best_score_['valid_1']['l2'])
-            print(metrics_mae(y_predict.tolist(),list(model_score)))
+            for feature,feature_importance in zip(list(model_train.columns),list(clf.feature_importances_)):
+                print(feature,feature_importance)
+            print("test_score:",metrics_mae(y_predict.tolist(), list(model_score)))
             y_train = clf.predict(model_train, num_iteration=clf.best_iteration_)
-            y_train_seed.append(y_train)
-            print(metrics_mae(y_train.tolist(), list(model_label)))
-            print(metrics_mae(y_train.tolist(), list(model_label)) - metrics_mae(y_predict.tolist(),list(model_score)))
-        #计算权重
-        y_train_w_sum = sum(y_train_score)
-        y_test_w_sum = sum(y_test_score)
-        y_train_w = np.array(minmax_adjust([y_train_w_sum/i for i in y_train_score])).reshape(len(seeds),1)
-        y_test_w = np.array(minmax_adjust([y_test_w_sum/i for i in y_test_score])).reshape(len(seeds),1)
-        print("权重总和：",y_train_w.sum())
-        #y_narray = np.array(y_test_seed).mean(axis=0)
-        #y_trainarray = np.array(y_train_seed).mean(axis=0)
+            print("train_score",metrics_mae(y_train.tolist(), list(model_label)))
+            print("train and test scala",metrics_mae(y_train.tolist(), list(model_label)) - metrics_mae(y_predict.tolist(), list(model_score)))
 
-        y_narray = (np.array(y_test_seed) * y_test_w).sum(axis=0)
-        y_trainarray = (np.array(y_train_seed) * y_train_w).sum(axis=0)
-
-
-        print("最终cv结果")
-        print(metrics_mae(y_narray.tolist(), list(model_score)))
-        print(metrics_mae(y_trainarray.tolist(), list(model_label)))
-        print(metrics_mae(y_trainarray.tolist(), list(model_label)) - metrics_mae(y_narray.tolist(), list(model_score)))
-
-        '''
-        clf.fit(model_train, model_label,eval_set=[(model_train, model_label), (model_test, model_score)],early_stopping_rounds=200, verbose=-1, eval_metric="l2")
-        y_predict = clf.predict(model_test, num_iteration=clf.best_iteration_)
-        print(metrics_mae(y_predict.tolist(), list(model_score)))
-        y_train = clf.predict(model_train, num_iteration=clf.best_iteration_)
-        print(metrics_mae(y_train.tolist(), list(model_label)))
-        print(metrics_mae(y_train.tolist(), list(model_label)) - metrics_mae(y_predict.tolist(), list(model_score)))
-        '''
     else:
         label = train['信用分']
         train.drop("信用分", axis=1, inplace=True)
@@ -192,30 +192,11 @@ if __name__ == "__main__":
         data_submit = pd.DataFrame()
         data_submit['id'] = test['用户编码']
         data_submit['score'] = test.apply(lambda row: int(round(row.信用分)), axis=1)
-        data_submit.to_csv("submit/sc_lgb_0224_v2.csv", encoding="utf-8", index=False)
+        data_submit.to_csv("submit/sc_lgb_0225_v1.csv", encoding="utf-8", index=False)
 
 
 
-#最优 cv种子 l1
-# 0.06392063613817085
-# 0.06913979721297478
-# 0.005219161074803927
 
-        # 0.06392758283416546   l2
-        # 0.0689245190360906
-        # 0.004996936201925151
-
-        # 0.063921044725555
-        # 0.06874482265554376
-        # 0.004823777929988754
-
-        # 0.06389980510559443
-        # 0.06851274251369827
-        # 0.00461293740810384
-
-        # 0.06390470530345149
-        # 0.06848247961362185
-        # 0.004577774310170354
         #runage(25) 无权重
         # 0.06393453104021482
         # 0.06860486854449625
