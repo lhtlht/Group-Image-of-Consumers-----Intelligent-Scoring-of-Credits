@@ -22,6 +22,18 @@ def minmax_adjust(m_list):
     m_sum = sum(m_list)
     return [i/m_sum for i in m_list]
 
+def get_abnormal_label(item):
+    if item == 0:
+        return 0
+    if item < 10:
+        return 1
+    if item < 100:
+        return 2
+    if item < 1000:
+        return 3
+    else:
+        return 4
+
 def feature_processing(train):
     train['用户当月消费是否低于近6个月'] = train.apply(lambda row: 1 if row['用户账单当月总费用（元）'] > row['用户近6个月平均消费值（元）'] else 0, axis=1)
     train['用户余额能支持月数'] = train.apply(lambda row: row['用户当月账户余额（元）'] / (row['用户近6个月平均消费值（元）'] + 1.0), axis=1)
@@ -30,9 +42,9 @@ def feature_processing(train):
     train['avg_zero'] = train['用户近6个月平均消费值（元）'].map(lambda x: 0 if x != 0 else 1)
     train['all_zero'] = train['用户账单当月总费用（元）'].map(lambda x: 0 if x != 0 else 1)
     train['zero_age'] = train['用户年龄'].map(lambda x: 0 if x != 0 else 1)
-    train['top_up_amount_offline'] = 0
-    train['top_up_amount_offline'][(train['缴费用户最近一次缴费金额（元）'] % 10 == 0) & train['缴费用户最近一次缴费金额（元）'] != 0] = 1
-    train['current_fee_stability'] = train['用户账单当月总费用（元）'] / (train['用户近6个月平均消费值（元）'] + 1)
+    train['充值金额是否整数'] = 0
+    train['充值金额是否整数'][(train['缴费用户最近一次缴费金额（元）'] % 10 == 0) & train['缴费用户最近一次缴费金额（元）'] != 0] = 1
+    train['当月花费的稳定性'] = train['用户账单当月总费用（元）'] / (train['用户近6个月平均消费值（元）'] + 1)
     train['use_left_rate'] = train['用户账单当月总费用（元）'] / (train['用户当月账户余额（元）'] + 1)
 
     #train['当月账单余额是否能支持下个月'] = train.apply(lambda row: 1 if row['用户当月账户余额（元）'] > row['用户账单当月总费用（元）'] else 0, axis=1)
@@ -47,21 +59,21 @@ def feature_processing(train):
     # train['zero_旅游资讯'] = train['当月旅游资讯类应用使用次数'].map(lambda x: 1 if x != 0 else 0)
 
     train['bigger_商场'] = train['近三个月月均商场出现次数'].map(lambda x: 1 if x >= 92 else 0)
-    # train['bigger_网购'] = train['当月网购类应用使用次数'].map(lambda x: 1 if x >= 200000 else 0)
-    # train['bigger_物流'] = train['当月物流快递类应用使用次数'].map(lambda x: 1 if x >= 5000 else 0)
-    # train['bigger_金融理财'] = train['当月金融理财类应用使用总次数'].map(lambda x: 1 if x >= 100000 else 0)
-    # train['bigger_视频播放'] = train['当月视频播放类应用使用次数'].map(lambda x: 1 if x >= 500000 else 0)
-    # train['bigger_飞机'] = train['当月飞机类应用使用次数'].map(lambda x: 1 if x >= 1000 else 0)
-    # train['bigger_旅游资讯'] = train['当月旅游资讯类应用使用次数'].map(lambda x: 1 if x >= 10000 else 0)
+    train['bigger_商场2'] = train.apply(lambda row: get_abnormal_label(row['近三个月月均商场出现次数']), axis=1)
+    train['bigger_网购'] = train.apply(lambda row: get_abnormal_label(row['当月网购类应用使用次数']), axis=1)
+    train['bigger_物流'] = train.apply(lambda row: get_abnormal_label(row['当月物流快递类应用使用次数']), axis=1)
+    train['bigger_金融理财'] = train.apply(lambda row: get_abnormal_label(row['当月金融理财类应用使用总次数']), axis=1)
+    train['bigger_视频播放'] = train.apply(lambda row: get_abnormal_label(row['当月视频播放类应用使用次数']), axis=1)
+    train['bigger_飞机'] = train.apply(lambda row: get_abnormal_label(row['当月飞机类应用使用次数']), axis=1)
+    train['bigger_火车'] = train.apply(lambda row: get_abnormal_label(row['当月火车类应用使用次数']), axis=1)
+    train['bigger_旅游资讯'] = train.apply(lambda row: get_abnormal_label(row['当月旅游资讯类应用使用次数']), axis=1)
 
     std = StandardScaler()
     minMax = MinMaxScaler()
-    # stacking_y = pd.read_csv('xgb_stacking_y.csv', encoding="utf-8")
-    # train['stacking_y'] = minMax.fit_transform(stacking_y[['xgb_stacking_y']])
     train['用户年龄归一化'] = std.fit_transform(train[['用户年龄']])
-    train['current_fee_stability2'] = std.fit_transform(train[['current_fee_stability']])
+    train['当月花费的稳定性2'] = std.fit_transform(train[['当月花费的稳定性']])
     train.drop("用户年龄", axis=1, inplace=True)
-    train.drop("current_fee_stability", axis=1, inplace=True)
+    train.drop("当月花费的稳定性", axis=1, inplace=True)
     train.drop("是否黑名单客户", axis=1, inplace=True)
 
     return train
@@ -172,7 +184,7 @@ if __name__ == "__main__":
         y_train_seed = []
         y_test_score = []
         y_train_score = []
-        seeds = range(1, 1000, 25)
+        seeds = range(1, 1000, 10)
         for seed in seeds:
             clf.fit(model_train, model_label, eval_set=[(model_train, model_label), (model_test, model_score)],early_stopping_rounds=200, verbose=-1, eval_metric="l2")
             #test['信用分'] = clf.predict(test_data)
@@ -192,7 +204,7 @@ if __name__ == "__main__":
         data_submit = pd.DataFrame()
         data_submit['id'] = test['用户编码']
         data_submit['score'] = test.apply(lambda row: int(round(row.信用分)), axis=1)
-        data_submit.to_csv("submit/sc_lgb_0225_v1.csv", encoding="utf-8", index=False)
+        data_submit.to_csv("submit/sc_lgb_0226_v1.csv", encoding="utf-8", index=False)
 
 
 
@@ -214,3 +226,7 @@ if __name__ == "__main__":
 # l2 0.06391287397020382
 # 0.06932360954170161
 # 0.005410735571497793
+
+# test_score: 0.06385247524120273
+# train_score 0.0687999229440863
+# train and test scala 0.0049474477028835645
