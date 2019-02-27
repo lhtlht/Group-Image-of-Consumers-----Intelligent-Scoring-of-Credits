@@ -22,17 +22,27 @@ def minmax_adjust(m_list):
     m_sum = sum(m_list)
     return [i/m_sum for i in m_list]
 
-def get_abnormal_label(item):
-    if item == 0:
-        return 0
-    if item < 10:
-        return 1
-    if item < 100:
-        return 2
-    if item < 1000:
-        return 3
-    else:
-        return 4
+def get_abnormal_label(train, name):
+    train[name + "_1"] = train.apply(lambda row: 1 if row[name] ==0 else 0, axis=1)
+    train[name + "_2"] = train.apply(lambda row: 1 if row[name] > 0 and row[name] <= 10 else 0, axis=1)
+    train[name + "_3"] = train.apply(lambda row: 1 if row[name] > 10 and row[name] <= 100 else 0, axis=1)
+    train[name + "_4"] = train.apply(lambda row: 1 if row[name] > 100 and row[name] <= 1000 else 0, axis=1)
+    train[name + "_4"] = train.apply(lambda row: 1 if row[name] > 1000 else 0, axis=1)
+    return train
+
+def get_app_rate(dataset):
+    dataset = dataset.copy()
+
+    app_num_columns = ['当月网购类应用使用次数', '当月物流快递类应用使用次数', '当月金融理财类应用使用总次数', '当月视频播放类应用使用次数', '当月飞机类应用使用次数',
+                       '当月火车类应用使用次数', '当月旅游资讯类应用使用次数']
+    dataset['helper_sum'] = dataset[app_num_columns].apply(lambda item: np.log1p(np.sum(item)), axis=1)
+
+    for column in app_num_columns:
+        column_name = f'{column}_rate'
+        dataset[column_name] = np.log1p(dataset[column]) / dataset['helper_sum']
+
+    #dataset = dataset.drop(columns=['helper_sum'])
+    return dataset
 
 def feature_processing(train):
     train['用户当月消费是否低于近6个月'] = train.apply(lambda row: 1 if row['用户账单当月总费用（元）'] > row['用户近6个月平均消费值（元）'] else 0, axis=1)
@@ -47,33 +57,28 @@ def feature_processing(train):
     train['当月花费的稳定性'] = train['用户账单当月总费用（元）'] / (train['用户近6个月平均消费值（元）'] + 1)
     train['use_left_rate'] = train['用户账单当月总费用（元）'] / (train['用户当月账户余额（元）'] + 1)
 
-    #train['当月账单余额是否能支持下个月'] = train.apply(lambda row: 1 if row['用户当月账户余额（元）'] > row['用户账单当月总费用（元）'] else 0, axis=1)
-    #train['当月账单余额是否能支持下个月2'] = train.apply(lambda row: 1 if row['用户当月账户余额（元）'] > row['用户近6个月平均消费值（元）'] else 0, axis=1)
-    # train['zero_商场'] = train['近三个月月均商场出现次数'].map(lambda x: 1 if x != 0 else 0)
-    # train['zero_网购'] = train['当月网购类应用使用次数'].map(lambda x: 1 if x != 0 else 0)
-    # train['zero_物流'] = train['当月物流快递类应用使用次数'].map(lambda x: 1 if x != 0 else 0)
-    # train['zero_金融理财'] = train['当月金融理财类应用使用总次数'].map(lambda x: 1 if x != 0 else 0)
-    # train['zero_视频播放'] = train['当月视频播放类应用使用次数'].map(lambda x: 1 if x != 0 else 0)
-    # train['zero_飞机'] = train['当月飞机类应用使用次数'].map(lambda x: 1 if x != 0 else 0)
-    # train['zero_火车'] = train['当月火车类应用使用次数'].map(lambda x: 1 if x != 0 else 0)
-    # train['zero_旅游资讯'] = train['当月旅游资讯类应用使用次数'].map(lambda x: 1 if x != 0 else 0)
-
     train['bigger_商场'] = train['近三个月月均商场出现次数'].map(lambda x: 1 if x >= 92 else 0)
-    train['bigger_商场2'] = train.apply(lambda row: get_abnormal_label(row['近三个月月均商场出现次数']), axis=1)
-    train['bigger_网购'] = train.apply(lambda row: get_abnormal_label(row['当月网购类应用使用次数']), axis=1)
-    train['bigger_物流'] = train.apply(lambda row: get_abnormal_label(row['当月物流快递类应用使用次数']), axis=1)
-    train['bigger_金融理财'] = train.apply(lambda row: get_abnormal_label(row['当月金融理财类应用使用总次数']), axis=1)
-    train['bigger_视频播放'] = train.apply(lambda row: get_abnormal_label(row['当月视频播放类应用使用次数']), axis=1)
-    train['bigger_飞机'] = train.apply(lambda row: get_abnormal_label(row['当月飞机类应用使用次数']), axis=1)
-    train['bigger_火车'] = train.apply(lambda row: get_abnormal_label(row['当月火车类应用使用次数']), axis=1)
-    train['bigger_旅游资讯'] = train.apply(lambda row: get_abnormal_label(row['当月旅游资讯类应用使用次数']), axis=1)
+    train = get_app_rate(train)
+    train = get_abnormal_label(train,"当月网购类应用使用次数")
+    train = get_abnormal_label(train, "当月物流快递类应用使用次数")
+    train = get_abnormal_label(train, "当月金融理财类应用使用总次数")
+    #train = get_abnormal_label(train, "当月视频播放类应用使用次数")
+    #train = get_abnormal_label(train, "当月飞机类应用使用次数")
+    train = get_abnormal_label(train, "当月火车类应用使用次数")
+    train = get_abnormal_label(train, "当月旅游资讯类应用使用次数")
+    train['当月网购类应用使用次数'] = np.log1p(train['当月网购类应用使用次数'])
+    train['当月物流快递类应用使用次数'] = np.log1p(train['当月物流快递类应用使用次数'])
+    train['当月金融理财类应用使用总次数'] = np.log1p(train['当月金融理财类应用使用总次数'])
+    train['当月视频播放类应用使用次数'] = np.log1p(train['当月视频播放类应用使用次数'])
+    train['当月飞机类应用使用次数'] = np.log1p(train['当月飞机类应用使用次数'])
+    train['当月火车类应用使用次数'] = np.log1p(train['当月火车类应用使用次数'])
+    train['当月旅游资讯类应用使用次数'] = np.log1p(train['当月旅游资讯类应用使用次数'])
+
 
     std = StandardScaler()
     minMax = MinMaxScaler()
     train['用户年龄归一化'] = std.fit_transform(train[['用户年龄']])
-    train['当月花费的稳定性2'] = std.fit_transform(train[['当月花费的稳定性']])
     train.drop("用户年龄", axis=1, inplace=True)
-    train.drop("当月花费的稳定性", axis=1, inplace=True)
     train.drop("是否黑名单客户", axis=1, inplace=True)
 
     return train
@@ -119,8 +124,8 @@ if __name__ == "__main__":
     # l2正则化参数 reg_lambda
     clf = lgb.LGBMRegressor(
         boosting_type='gbdt', num_leaves=31, reg_alpha=0.0, reg_lambda=2,
-        max_depth=7, n_estimators=10000, objective='regression',
-        subsample=0.7, colsample_bytree=0.7, subsample_freq=1,
+        max_depth=5, n_estimators=10000, objective='regression',
+        subsample=0.6, colsample_bytree=0.6, subsample_freq=1,
         learning_rate=0.01, random_state=2018, n_jobs=-1, max_bin=250,
         min_child_weight=5,min_child_samples=10
     )
@@ -133,6 +138,7 @@ if __name__ == "__main__":
             y_test_score = []
             y_train_score = []
             seeds = range(1,1000,25)
+            model_seeds = range(1,2000,200)
             for seed in seeds:
                 model_train_seed, model_test_seed, model_label_seed, model_score_seed = train_test_split(model_train, model_label, train_size=0.9,random_state=seed)
                 clf.fit(model_train_seed, model_label_seed, eval_set=[(model_train_seed, model_label_seed), (model_test_seed, model_score_seed)], early_stopping_rounds=200, verbose=-1,eval_metric="l2")
@@ -167,11 +173,10 @@ if __name__ == "__main__":
             print(metrics_mae(y_trainarray.tolist(), list(model_label)) - metrics_mae(y_narray.tolist(), list(model_score)))
 
         else:
-
             clf.fit(model_train, model_label,eval_set=[(model_train, model_label), (model_test, model_score)],early_stopping_rounds=200, verbose=-1, eval_metric="l2")
             y_predict = clf.predict(model_test, num_iteration=clf.best_iteration_)
-            for feature,feature_importance in zip(list(model_train.columns),list(clf.feature_importances_)):
-                print(feature,feature_importance)
+            # for feature,feature_importance in zip(list(model_train.columns),list(clf.feature_importances_)):
+            #     print(feature,feature_importance)
             print("test_score:",metrics_mae(y_predict.tolist(), list(model_score)))
             y_train = clf.predict(model_train, num_iteration=clf.best_iteration_)
             print("train_score",metrics_mae(y_train.tolist(), list(model_label)))
@@ -204,7 +209,7 @@ if __name__ == "__main__":
         data_submit = pd.DataFrame()
         data_submit['id'] = test['用户编码']
         data_submit['score'] = test.apply(lambda row: int(round(row.信用分)), axis=1)
-        data_submit.to_csv("submit/sc_lgb_0226_v1.csv", encoding="utf-8", index=False)
+        data_submit.to_csv("submit/sc_lgb_0228_v1.csv", encoding="utf-8", index=False)
 
 
 
@@ -227,6 +232,6 @@ if __name__ == "__main__":
 # 0.06932360954170161
 # 0.005410735571497793
 
-# test_score: 0.06385247524120273
-# train_score 0.0687999229440863
-# train and test scala 0.0049474477028835645
+# test_score: 0.06385940712926422
+# train_score 0.06879140382617788
+# train and test scala 0.00493199669691366
