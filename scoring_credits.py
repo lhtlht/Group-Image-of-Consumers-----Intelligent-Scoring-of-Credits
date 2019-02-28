@@ -63,16 +63,16 @@ def feature_processing(train):
     train = get_abnormal_label(train, "当月物流快递类应用使用次数")
     train = get_abnormal_label(train, "当月金融理财类应用使用总次数")
     #train = get_abnormal_label(train, "当月视频播放类应用使用次数")
-    #train = get_abnormal_label(train, "当月飞机类应用使用次数")
-    train = get_abnormal_label(train, "当月火车类应用使用次数")
-    train = get_abnormal_label(train, "当月旅游资讯类应用使用次数")
-    train['当月网购类应用使用次数'] = np.log1p(train['当月网购类应用使用次数'])
-    train['当月物流快递类应用使用次数'] = np.log1p(train['当月物流快递类应用使用次数'])
-    train['当月金融理财类应用使用总次数'] = np.log1p(train['当月金融理财类应用使用总次数'])
-    train['当月视频播放类应用使用次数'] = np.log1p(train['当月视频播放类应用使用次数'])
-    train['当月飞机类应用使用次数'] = np.log1p(train['当月飞机类应用使用次数'])
-    train['当月火车类应用使用次数'] = np.log1p(train['当月火车类应用使用次数'])
-    train['当月旅游资讯类应用使用次数'] = np.log1p(train['当月旅游资讯类应用使用次数'])
+    # #train = get_abnormal_label(train, "当月飞机类应用使用次数")
+    # train = get_abnormal_label(train, "当月火车类应用使用次数")
+    # train = get_abnormal_label(train, "当月旅游资讯类应用使用次数")
+    # train['当月网购类应用使用次数'] = np.log1p(train['当月网购类应用使用次数'])
+    # train['当月物流快递类应用使用次数'] = np.log1p(train['当月物流快递类应用使用次数'])
+    # train['当月金融理财类应用使用总次数'] = np.log1p(train['当月金融理财类应用使用总次数'])
+    # train['当月视频播放类应用使用次数'] = np.log1p(train['当月视频播放类应用使用次数'])
+    # train['当月飞机类应用使用次数'] = np.log1p(train['当月飞机类应用使用次数'])
+    # train['当月火车类应用使用次数'] = np.log1p(train['当月火车类应用使用次数'])
+    # train['当月旅游资讯类应用使用次数'] = np.log1p(train['当月旅游资讯类应用使用次数'])
 
 
     std = StandardScaler()
@@ -209,7 +209,7 @@ if __name__ == "__main__":
         data_submit = pd.DataFrame()
         data_submit['id'] = test['用户编码']
         data_submit['score'] = test.apply(lambda row: int(round(row.信用分)), axis=1)
-        data_submit.to_csv("submit/sc_lgb_0228_v1.csv", encoding="utf-8", index=False)
+        data_submit.to_csv("submit/sc_lgb_0228_v2.csv", encoding="utf-8", index=False)
 
 
 
@@ -232,6 +232,6 @@ if __name__ == "__main__":
 # 0.06932360954170161
 # 0.005410735571497793
 
-# test_score: 0.06385940712926422
-# train_score 0.06879140382617788
-# train and test scala 0.00493199669691366
+# test_score: 0.06387613140597753
+# train_score 0.06851426809633106
+# train and test scala 0.004638136690353525
