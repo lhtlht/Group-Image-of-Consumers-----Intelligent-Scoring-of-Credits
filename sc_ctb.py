@@ -11,6 +11,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import GridSearchCV
 from sklearn.model_selection import KFold
 from xgboost import XGBRegressor
+from catboost import CatBoostRegressor
 from scipy import sparse
 import inspect
 from sklearn.metrics import mean_absolute_error
@@ -18,24 +19,40 @@ from sklearn.metrics import mean_absolute_error
 
 TRAIN_DATA = "./data/train_dataset.csv"
 TEST_DATA = "./data/test_dataset.csv"
-xgb_params = {
-        'booster': 'gbtree',
-        'learning_rate': 0.01,
-        'max_depth': 5,
-        'subsample': 0.7,
-        'colsample_bytree': 0.8,
-        'objective': 'reg:linear',
-        'n_estimators': 10000,
-        'min_child_weight': 3,
-        'gamma': 0,
-        'silent': True,
-        'n_jobs': -1,
-        'random_state': 4590,
-        'reg_alpha': 2,
-        'reg_lambda': 0.1,
-        'alpha': 1,
-        'verbose': 1
-    }
+ctb_params = {
+    'n_estimators': 10000,
+    'learning_rate': 0.01,
+    'random_seed': 4590,
+    'reg_lambda': 0.08,
+    'subsample': 0.7,
+    'bootstrap_type': 'Bernoulli',
+    'boosting_type': 'Plain',
+    'one_hot_max_size': 10,
+    'rsm': 0.5,
+    'leaf_estimation_iterations': 5,
+    'use_best_model': True,
+    'max_depth': 6,
+    'verbose': -1,
+    'thread_count': 4
+}
+lgb_params_good = {
+    'boosting_type': 'gbdt',
+    'objective': 'mae',
+    'n_estimators': 10000,
+    'metric': 'mae',
+    'learning_rate': 0.01,
+    'min_child_samples': 5,
+    'min_child_weight': 0.01,
+    'subsample_freq': 1,
+    'num_leaves': 40,
+    'max_depth': 7,
+    'subsample': 0.42,
+    'colsample_bytree': 0.48,
+    'reg_alpha': 0.15,
+    'reg_lambda': 5,
+    'verbose': -1,
+    'seed': 4590
+}
 def metrics_mae(label, score):
     sum = 0.0
     for (l, s) in zip(label, score):
@@ -67,13 +84,7 @@ def get_app_rate(dataset):
 
     #dataset = dataset.drop(columns=['helper_sum'])
     return dataset
-def log_feature(df):
-    user_bill_features = ['缴费用户最近一次缴费金额（元）', '用户近6个月平均消费值（元）',
-                          '用户账单当月总费用（元）', '用户当月账户余额（元）']
-    log_features = ['当月网购类应用使用次数', '当月金融理财类应用使用总次数', '当月视频播放类应用使用次数']
-    for col in user_bill_features + log_features:
-        df[col] = df[col].map(lambda x: np.log1p(x))
-    return df
+
 def feature_processing(train):
     train['用户当月消费是否低于近6个月'] = train.apply(lambda row: 1 if row['用户账单当月总费用（元）'] > row['用户近6个月平均消费值（元）'] else 0, axis=1)
     train['用户余额能支持月数'] = train.apply(lambda row: row['用户当月账户余额（元）'] / (row['用户近6个月平均消费值（元）'] + 1.0), axis=1)
@@ -92,14 +103,18 @@ def feature_processing(train):
     train = get_abnormal_label(train,"当月网购类应用使用次数")
     train = get_abnormal_label(train, "当月物流快递类应用使用次数")
     train = get_abnormal_label(train, "当月金融理财类应用使用总次数")
+    #train = get_abnormal_label(train, "当月视频播放类应用使用次数")
+    # #train = get_abnormal_label(train, "当月飞机类应用使用次数")
+    # train = get_abnormal_label(train, "当月火车类应用使用次数")
+    # train = get_abnormal_label(train, "当月旅游资讯类应用使用次数")
+    # train['当月网购类应用使用次数'] = np.log1p(train['当月网购类应用使用次数'])
+    # train['当月物流快递类应用使用次数'] = np.log1p(train['当月物流快递类应用使用次数'])
+    # train['当月金融理财类应用使用总次数'] = np.log1p(train['当月金融理财类应用使用总次数'])
+    # train['当月视频播放类应用使用次数'] = np.log1p(train['当月视频播放类应用使用次数'])
+    # train['当月飞机类应用使用次数'] = np.log1p(train['当月飞机类应用使用次数'])
+    # train['当月火车类应用使用次数'] = np.log1p(train['当月火车类应用使用次数'])
+    # train['当月旅游资讯类应用使用次数'] = np.log1p(train['当月旅游资讯类应用使用次数'])
 
-    train['是否去过高档商场'] = train['当月是否逛过福州仓山万达'] * train['当月是否到过福州山姆会员店']
-    train['交通类应用使用次数'] = train['当月飞机类应用使用次数'] + train['当月火车类应用使用次数']
-    # train.loc[train["用户年龄"] == 0, "用户年龄"] = train["用户年龄"].mode()
-    train['当月账单是否超过平均消费额'] = train['用户账单当月总费用（元）'] - train['用户近6个月平均消费值（元）']
-    train['缴费金额是否能覆盖当月账单'] = train['缴费用户最近一次缴费金额（元）'] - train['用户账单当月总费用（元）']
-    train['最近一次缴费是否超过平均消费额'] = train['缴费用户最近一次缴费金额（元）'] - train['用户近6个月平均消费值（元）']
-    train = log_feature(train)
 
     std = StandardScaler()
     minMax = MinMaxScaler()
@@ -149,8 +164,10 @@ if __name__ == "__main__":
     test = feature_processing(test)
     test_data = test.drop("用户编码", axis=1)
 
-    train_x = sparse.csr_matrix(train.values)
-    test_x = sparse.csr_matrix(test_data.values)
+    # train_x = sparse.csr_matrix(train.values)
+    # test_x = sparse.csr_matrix(test_data.values)
+    train_x = train
+    test_x = test_data
 
     n_fold = 10
     seed = 22
@@ -164,20 +181,20 @@ if __name__ == "__main__":
         print(count_fold)
         count_fold = count_fold + 1
         for sed in seeds:
-            xgb_params['random_state'] = sed
-            k_x_train = train_x[train_index]
+            ctb_params['random_seed'] = sed
+            k_x_train = train_x.loc[train_index]
             k_y_train = train_labels.loc[train_index]
-            k_x_vali = train_x[vali_index]
+            k_x_vali = train_x.loc[vali_index]
             k_y_vali = train_labels.loc[vali_index]
 
-            xgb_model = XGBRegressor(**xgb_params)
-            xgb_model = xgb_model.fit(k_x_train, k_y_train, eval_set=[(k_x_train, k_y_train), (k_x_vali, k_y_vali)],
+            ctb_model = CatBoostRegressor(**ctb_params)
+            ctb_model = ctb_model.fit(k_x_train, k_y_train, eval_set=[(k_x_train, k_y_train), (k_x_vali, k_y_vali)],
                           early_stopping_rounds=200, verbose=False)
-            iteration_kwargs = get_iteration_kwargs(xgb_model)
-            k_pred = xgb_model.predict(k_x_vali, **iteration_kwargs)
+            iteration_kwargs = get_iteration_kwargs(ctb_model)
+            k_pred = ctb_model.predict(k_x_vali, **iteration_kwargs)
             oof[vali_index] = k_pred
 
-            preds = xgb_model.predict(test_x, **iteration_kwargs)
+            preds = ctb_model.predict(test_x, **iteration_kwargs)
             preds_list.append(preds)
 
     fold_mae_error = mean_absolute_error(train_labels, oof)
@@ -196,18 +213,16 @@ if __name__ == "__main__":
         sub_df = pd.DataFrame({'id': test['用户编码'],
                                'score': prediction})
         #sub_df['score'] = sub_df['score'].apply(lambda item: int(round(item)))
-        #sub_df.to_csv('submit/sc_xgb_0301_v1.csv', index=False)
-        sub_df.to_csv('stacking/sc_xgb_test_0310_v1.csv', index=False)
+        #sub_df.to_csv('submit/sc_lgb_0301_v2.csv', index=False)
+        sub_df.to_csv('stacking/sc_ctb_test_0309_v1.csv', index=False)
         train['predict_score'] = oof
         train['score'] = train_labels
-        train[[ 'score', 'predict_score']].to_csv('stacking/sc_xgb_train_0310_v1.csv', index=False)
+        train[['score','predict_score']].to_csv('stacking/sc_ctb_train_0309_v1.csv', index=False)
+
+#  fold mae error is 14.675924985134769
+# fold score is 0.0637920888845975
+
 '''
- fold mae error is 14.70886662902832
-fold score is 0.06365831626274718
-
- fold mae error is 14.700275849609374
-fold score is 0.06369314842483358
-
- fold mae error is 14.69578114501953
-fold score is 0.06371138784114053
+ fold mae error is 14.658165235536416
+fold score is 0.06386444292531072
 '''
