@@ -20,7 +20,7 @@ TRAIN_DATA = "./data/train_dataset.csv"
 TEST_DATA = "./data/test_dataset.csv"
 lgb_params = {
     'boosting_type': 'gbdt',
-    'objective': 'mae',
+    'objective': 'regression',
     'n_estimators': 10000,
     'metric': 'mae',
     'learning_rate': 0.01,
@@ -45,10 +45,10 @@ lgb_params_good = {
     'min_child_samples': 5,
     'min_child_weight': 0.01,
     'subsample_freq': 1,
-    'num_leaves': 31,
-    'max_depth': 5,
-    'subsample': 0.45,
-    'colsample_bytree': 0.6,
+    'num_leaves': 40,
+    'max_depth': 7,
+    'subsample': 0.6,
+    'colsample_bytree': 0.48,
     'reg_alpha': 0.15,
     'reg_lambda': 5,
     'verbose': -1,
@@ -105,15 +105,9 @@ def feature_processing(train):
     train['当月花费的稳定性'] = train['用户账单当月总费用（元）'] / (train['用户近6个月平均消费值（元）'] + 1)
     train['use_left_rate'] = train['用户账单当月总费用（元）'] / (train['用户当月账户余额（元）'] + 1)
 
-    # train['bigger_商场'] = train['近三个月月均商场出现次数'].map(lambda x: 1 if x >= 92 else 0)
-    # train = get_app_rate(train)
-    # train = get_abnormal_label(train,"当月网购类应用使用次数")
-    # train = get_abnormal_label(train, "当月物流快递类应用使用次数")
-    # train = get_abnormal_label(train, "当月金融理财类应用使用总次数")
-
     #train['是否去过高档商场'] = train['当月是否逛过福州仓山万达'] * train['当月是否到过福州山姆会员店']
     #train['交通类应用使用次数'] = train['当月飞机类应用使用次数'] + train['当月火车类应用使用次数']
-    #train.loc[train["用户年龄"] == 0,"用户年龄"] = train["用户年龄"].mode()
+    train["用户年龄"] = train["用户年龄"].replace(0,train["用户年龄"].mode())
     train['当月账单是否超过平均消费额'] = train['用户账单当月总费用（元）'] - train['用户近6个月平均消费值（元）']
     train['缴费金额是否能覆盖当月账单'] = train['缴费用户最近一次缴费金额（元）'] - train['用户账单当月总费用（元）']
     train['最近一次缴费是否超过平均消费额'] = train['缴费用户最近一次缴费金额（元）'] - train['用户近6个月平均消费值（元）']
@@ -123,7 +117,7 @@ def feature_processing(train):
     minMax = MinMaxScaler()
     train['用户年龄归一化'] = std.fit_transform(train[['用户年龄']])
     train.drop("用户年龄", axis=1, inplace=True)
-    train.drop("是否黑名单客户", axis=1, inplace=True)
+    #train.drop("是否黑名单客户", axis=1, inplace=True)
 
     return train
 
@@ -177,12 +171,12 @@ if __name__ == "__main__":
     preds_list = list()
     oof = np.zeros(train.shape[0])
     count_fold = 0
-    seeds = range(1, 1000, 1000)
+    seeds = range(1, 1000, 500)
     for train_index, vali_index in kfold:
         print(count_fold)
         count_fold = count_fold + 1
         for sed in seeds:
-            lgb_params_good['seed'] = sed
+            lgb_params['seed'] = sed
             k_x_train = train_x[train_index]
             k_y_train = train_labels.loc[train_index]
             k_x_vali = train_x[vali_index]
@@ -190,7 +184,7 @@ if __name__ == "__main__":
 
             lgb_model = lgb.LGBMRegressor(**lgb_params)
             lgb_model = lgb_model.fit(k_x_train, k_y_train, eval_set=[(k_x_train, k_y_train), (k_x_vali, k_y_vali)],
-                          early_stopping_rounds=200, verbose=False)
+                          early_stopping_rounds=200, verbose=False,eval_metric="l1")
             iteration_kwargs = get_iteration_kwargs(lgb_model)
             k_pred = lgb_model.predict(k_x_vali, **iteration_kwargs)
             oof[vali_index] = k_pred
@@ -215,24 +209,27 @@ if __name__ == "__main__":
                                'score': prediction})
         #sub_df['score'] = sub_df['score'].apply(lambda item: int(round(item)))
         #sub_df.to_csv('submit/sc_lgb_0301_v2.csv', index=False)
-        sub_df.to_csv('stacking/sc_lgb_test_0310_v1.csv', index=False)
+
+        # sub_df.to_csv('stacking/sc_lgb_test_0311_v2.csv', index=False)
+        # train['predict_score'] = oof
+        # train['score'] = train_labels
+        # train[['score','predict_score']].to_csv('stacking/sc_lgb_train_0311_v2.csv', index=False)
+
+        sub_df.to_csv('stacking/sc_lgb_l1_test_0311_v2.csv', index=False)
         train['predict_score'] = oof
         train['score'] = train_labels
-        train[['score','predict_score']].to_csv('stacking/sc_lgb_train_0310_v1.csv', index=False)
+        train[['score','predict_score']].to_csv('stacking/sc_lgb_l1_train_0311_v2.csv', index=False)
 
-#  fold mae error is 14.675924985134769
-# fold score is 0.0637920888845975
+
 
 '''
- fold mae error is 14.675383016978879
-fold score is 0.06379429446265168
-
- fold mae error is 14.668817614566851
-fold score is 0.0638210249553437
-
- fold mae error is 14.66697798807767
-fold score is 0.06382851886056039
 
  fold mae error is 14.660467711307472
 fold score is 0.06385505327391727
+
+ fold mae error is 14.655782729987733
+fold score is 0.06387416185104298
+
+ fold mae error is 14.649856439720336
+fold score is 0.06389834972939024
 '''
