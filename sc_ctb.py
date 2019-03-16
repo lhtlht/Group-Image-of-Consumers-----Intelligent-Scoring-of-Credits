@@ -98,29 +98,18 @@ def feature_processing(train):
     train['当月花费的稳定性'] = train['用户账单当月总费用（元）'] / (train['用户近6个月平均消费值（元）'] + 1)
     train['use_left_rate'] = train['用户账单当月总费用（元）'] / (train['用户当月账户余额（元）'] + 1)
 
-    train['bigger_商场'] = train['近三个月月均商场出现次数'].map(lambda x: 1 if x >= 92 else 0)
-    train = get_app_rate(train)
-    train = get_abnormal_label(train,"当月网购类应用使用次数")
-    train = get_abnormal_label(train, "当月物流快递类应用使用次数")
-    train = get_abnormal_label(train, "当月金融理财类应用使用总次数")
-    #train = get_abnormal_label(train, "当月视频播放类应用使用次数")
-    # #train = get_abnormal_label(train, "当月飞机类应用使用次数")
-    # train = get_abnormal_label(train, "当月火车类应用使用次数")
-    # train = get_abnormal_label(train, "当月旅游资讯类应用使用次数")
-    # train['当月网购类应用使用次数'] = np.log1p(train['当月网购类应用使用次数'])
-    # train['当月物流快递类应用使用次数'] = np.log1p(train['当月物流快递类应用使用次数'])
-    # train['当月金融理财类应用使用总次数'] = np.log1p(train['当月金融理财类应用使用总次数'])
-    # train['当月视频播放类应用使用次数'] = np.log1p(train['当月视频播放类应用使用次数'])
-    # train['当月飞机类应用使用次数'] = np.log1p(train['当月飞机类应用使用次数'])
-    # train['当月火车类应用使用次数'] = np.log1p(train['当月火车类应用使用次数'])
-    # train['当月旅游资讯类应用使用次数'] = np.log1p(train['当月旅游资讯类应用使用次数'])
+    train['是否去过高档商场'] = train['当月是否逛过福州仓山万达'] * train['当月是否到过福州山姆会员店']
+    train['交通类应用使用次数'] = train['当月飞机类应用使用次数'] + train['当月火车类应用使用次数']
+    train["用户年龄"] = train["用户年龄"].replace(0, train["用户年龄"].mode())
+    train['当月账单是否超过平均消费额'] = train['用户账单当月总费用（元）'] - train['用户近6个月平均消费值（元）']
+    train['缴费金额是否能覆盖当月账单'] = train['缴费用户最近一次缴费金额（元）'] - train['用户账单当月总费用（元）']
+    train['最近一次缴费是否超过平均消费额'] = train['缴费用户最近一次缴费金额（元）'] - train['用户近6个月平均消费值（元）']
 
 
     std = StandardScaler()
     minMax = MinMaxScaler()
     train['用户年龄归一化'] = std.fit_transform(train[['用户年龄']])
     train.drop("用户年龄", axis=1, inplace=True)
-    train.drop("是否黑名单客户", axis=1, inplace=True)
 
     return train
 
@@ -176,7 +165,7 @@ if __name__ == "__main__":
     preds_list = list()
     oof = np.zeros(train.shape[0])
     count_fold = 0
-    seeds = range(1, 1000, 250)
+    seeds = range(1, 1000, 500)
     for train_index, vali_index in kfold:
         print(count_fold)
         count_fold = count_fold + 1
@@ -214,15 +203,18 @@ if __name__ == "__main__":
                                'score': prediction})
         #sub_df['score'] = sub_df['score'].apply(lambda item: int(round(item)))
         #sub_df.to_csv('submit/sc_lgb_0301_v2.csv', index=False)
-        sub_df.to_csv('stacking/sc_ctb_test_0309_v1.csv', index=False)
+        sub_df.to_csv('stacking/sc_ctb_test.csv', index=False)
         train['predict_score'] = oof
         train['score'] = train_labels
-        train[['score','predict_score']].to_csv('stacking/sc_ctb_train_0309_v1.csv', index=False)
+        train[['score','predict_score']].to_csv('stacking/sc_ctb_train.csv', index=False)
 
 #  fold mae error is 14.675924985134769
 # fold score is 0.0637920888845975
 
 '''
- fold mae error is 14.658165235536416
-fold score is 0.06386444292531072
+stacking fold mae error is 14.625699581822275
+fold score is 0.06399713464114735
+
+ fold mae error is 14.656107345270174
+fold score is 0.06387283747783624
 '''

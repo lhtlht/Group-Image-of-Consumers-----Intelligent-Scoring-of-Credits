@@ -18,7 +18,7 @@ from sklearn.metrics import mean_absolute_error
 
 TRAIN_DATA = "./data/train_dataset.csv"
 TEST_DATA = "./data/test_dataset.csv"
-lgb_params = {
+lgb_params_l1 = {
     'boosting_type': 'gbdt',
     'objective': 'regression',
     'n_estimators': 10000,
@@ -27,33 +27,34 @@ lgb_params = {
     'min_child_samples': 5,
     'min_child_weight': 0.01,
     'subsample_freq': 1,
-    'num_leaves': 40,
-    'max_depth': 7,
+    'num_leaves': 31,
+    'max_depth': 5,
     'subsample': 0.6,
-    'colsample_bytree': 0.48,
-    'reg_alpha': 0.15,
+    'colsample_bytree': 0.6,
+    'reg_alpha': 0,
     'reg_lambda': 5,
     'verbose': -1,
     'seed': 4590
 }
-lgb_params_good = {
+lgb_params_l2 = {
     'boosting_type': 'gbdt',
-    'objective': 'mae',
+    'objective': 'regression',
     'n_estimators': 10000,
-    'metric': 'mae',
+    'metric': 'mse',
     'learning_rate': 0.01,
     'min_child_samples': 5,
     'min_child_weight': 0.01,
     'subsample_freq': 1,
-    'num_leaves': 40,
-    'max_depth': 7,
+    'num_leaves': 31,
+    'max_depth': 5,
     'subsample': 0.6,
-    'colsample_bytree': 0.48,
+    'colsample_bytree': 0.6,
     'reg_alpha': 0.15,
     'reg_lambda': 5,
     'verbose': -1,
-    'seed': 4590
+    'seed': 2222
 }
+
 def metrics_mae(label, score):
     sum = 0.0
     for (l, s) in zip(label, score):
@@ -92,32 +93,75 @@ def get_app_rate(dataset):
     #dataset = dataset.drop(columns=['helper_sum'])
     return dataset
 
+
+def base_process(data):
+    transform_value_feature = ['用户年龄', '用户网龄（月）', '当月通话交往圈人数', '近三个月月均商场出现次数', '当月网购类应用使用次数', '当月物流快递类应用使用次数'
+        , '当月金融理财类应用使用总次数', '当月视频播放类应用使用次数', '当月飞机类应用使用次数', '当月火车类应用使用次数', '当月旅游资讯类应用使用次数']
+    user_fea = ['缴费用户最近一次缴费金额（元）', '用户近6个月平均消费值（元）', '用户账单当月总费用（元）', '用户当月账户余额（元）']
+    log_features = ['当月网购类应用使用次数', '当月金融理财类应用使用总次数', '当月物流快递类应用使用次数', '当月视频播放类应用使用次数']
+
+    # 处理离散点
+    for col in transform_value_feature + user_fea + log_features:
+        # 取出最高99.9%值
+        ulimit = np.percentile(data[col].values, 99)
+        # 取出最低0.1%值
+        llimit = np.percentile(data[col].values, 0.1)
+        data.loc[data[col] > ulimit, col] = ulimit
+        data.loc[data[col] < llimit, col] = llimit
+
+    for col in user_fea + log_features:
+        data[col] = data[col].map(lambda x: np.log1p(x))
+
+    return data
+
+def map_discretize(x):
+    if x == 0:
+        return 0
+    elif x <= 5:
+        return 1
+    elif x <= 15:
+        return 2
+    elif x <= 50:
+        return 3
+    elif x <= 100:
+        return 4
+    else:
+        return 5
 def feature_processing(train):
-    train['用户当月消费是否低于近6个月'] = train.apply(lambda row: 1 if row['用户账单当月总费用（元）'] > row['用户近6个月平均消费值（元）'] else 0, axis=1)
-    train['用户余额能支持月数'] = train.apply(lambda row: row['用户当月账户余额（元）'] / (row['用户近6个月平均消费值（元）'] + 1.0), axis=1)
-    train['用户最近缴费支持月数'] = train.apply(lambda row: (row['缴费用户最近一次缴费金额（元）']) / (row['用户近6个月平均消费值（元）'] + 1.0), axis=1)
     train['up_zero'] = train['缴费用户最近一次缴费金额（元）'].map(lambda x: 0 if x != 0 else 1)
     train['avg_zero'] = train['用户近6个月平均消费值（元）'].map(lambda x: 0 if x != 0 else 1)
     train['all_zero'] = train['用户账单当月总费用（元）'].map(lambda x: 0 if x != 0 else 1)
     train['zero_age'] = train['用户年龄'].map(lambda x: 0 if x != 0 else 1)
-    train['充值金额是否整数'] = 0
-    train['充值金额是否整数'][(train['缴费用户最近一次缴费金额（元）'] % 10 == 0) & train['缴费用户最近一次缴费金额（元）'] != 0] = 1
-    train['当月花费的稳定性'] = train['用户账单当月总费用（元）'] / (train['用户近6个月平均消费值（元）'] + 1)
+    train['top_up_amount_offline'] = 0
+    train['top_up_amount_offline'][
+        (train['缴费用户最近一次缴费金额（元）'] % 10 == 0) & train['缴费用户最近一次缴费金额（元）'] != 0] = 1
+    train['current_fee_stability'] = train['用户账单当月总费用（元）'] / (train['用户近6个月平均消费值（元）'] + 1)
     train['use_left_rate'] = train['用户账单当月总费用（元）'] / (train['用户当月账户余额（元）'] + 1)
+    train['交通类应用使用次数'] = train['当月飞机类应用使用次数'] + train['当月火车类应用使用次数']
+    #尝试特征
+    train['是否去过高档商场'] = train['当月是否到过福州山姆会员店'] + train['当月是否逛过福州仓山万达']
+    train['是否去过高档商场'] = train['是否去过高档商场'].map(lambda x: 1 if x >= 1 else 0)
+    train['是否_商场_电影'] = train['是否去过高档商场'] * train['当月是否看电影']
+    train['是否_商场_旅游_体育馆'] = train['是否去过高档商场'] * train['当月是否景点游览'] * train['当月是否体育场馆消费']
+    #app使用次数
+    discretize_features = ['交通类应用使用次数', '当月物流快递类应用使用次数', '当月飞机类应用使用次数', '当月火车类应用使用次数', '当月旅游资讯类应用使用次数']
+    train['6个月占比总费用'] = train['用户近6个月平均消费值（元）'] / train['用户账单当月总费用（元）'] + 1
+    train["用户年龄"] = train["用户年龄"].replace(0, train["用户年龄"].mode())
+    train = base_process(train) # 对所有特征的异常值进行处理
+    for col in discretize_features[:]:
+        train[col] = train[col].map(lambda x: map_discretize(x))
+    #####################################################3
 
-    #train['是否去过高档商场'] = train['当月是否逛过福州仓山万达'] * train['当月是否到过福州山姆会员店']
-    #train['交通类应用使用次数'] = train['当月飞机类应用使用次数'] + train['当月火车类应用使用次数']
-    train["用户年龄"] = train["用户年龄"].replace(0,train["用户年龄"].mode())
     train['当月账单是否超过平均消费额'] = train['用户账单当月总费用（元）'] - train['用户近6个月平均消费值（元）']
     train['缴费金额是否能覆盖当月账单'] = train['缴费用户最近一次缴费金额（元）'] - train['用户账单当月总费用（元）']
     train['最近一次缴费是否超过平均消费额'] = train['缴费用户最近一次缴费金额（元）'] - train['用户近6个月平均消费值（元）']
-    #train = log_feature(train)
 
-    std = StandardScaler()
-    minMax = MinMaxScaler()
-    train['用户年龄归一化'] = std.fit_transform(train[['用户年龄']])
-    train.drop("用户年龄", axis=1, inplace=True)
-    #train.drop("是否黑名单客户", axis=1, inplace=True)
+
+    '''
+    fold score is 0.06382183981577505
+    '''
+
+
 
     return train
 
@@ -154,12 +198,20 @@ if __name__ == "__main__":
       dtype='object')
     '''
 
-    train = feature_processing(train)
+
     train_labels = train["信用分"]
     train.drop("用户编码", axis=1, inplace=True)
     train.drop("信用分", axis=1, inplace=True)
-    test = feature_processing(test)
     test_data = test.drop("用户编码", axis=1)
+
+    # test_data = feature_processing(test_data)
+    # train = feature_processing(train)
+    train_shape = train.shape[0]
+    test_shape = test.shape[0]
+    data = pd.concat([train, test_data], ignore_index=True)
+    data = feature_processing(data)
+    train = data[0:train_shape]
+    test_data = data[train_shape:]
 
     train_x = sparse.csr_matrix(train.values)
     test_x = sparse.csr_matrix(test_data.values)
@@ -171,18 +223,19 @@ if __name__ == "__main__":
     preds_list = list()
     oof = np.zeros(train.shape[0])
     count_fold = 0
-    seeds = range(1, 1000, 500)
+    seeds = range(1, 3)
     for train_index, vali_index in kfold:
         print(count_fold)
         count_fold = count_fold + 1
         for sed in seeds:
-            lgb_params['seed'] = sed
+
             k_x_train = train_x[train_index]
             k_y_train = train_labels.loc[train_index]
             k_x_vali = train_x[vali_index]
             k_y_vali = train_labels.loc[vali_index]
 
-            lgb_model = lgb.LGBMRegressor(**lgb_params)
+            lgb_params_l1['seed'] = sed
+            lgb_model = lgb.LGBMRegressor(**lgb_params_l1)
             lgb_model = lgb_model.fit(k_x_train, k_y_train, eval_set=[(k_x_train, k_y_train), (k_x_vali, k_y_vali)],
                           early_stopping_rounds=200, verbose=False,eval_metric="l1")
             iteration_kwargs = get_iteration_kwargs(lgb_model)
@@ -193,7 +246,6 @@ if __name__ == "__main__":
             preds_list.append(preds)
 
     fold_mae_error = mean_absolute_error(train_labels, oof)
-    print(' fold mae error is',fold_mae_error)
     fold_score = 1 / (1 + fold_mae_error)
     print(f'fold score is {fold_score}')
 
@@ -210,26 +262,26 @@ if __name__ == "__main__":
         #sub_df['score'] = sub_df['score'].apply(lambda item: int(round(item)))
         #sub_df.to_csv('submit/sc_lgb_0301_v2.csv', index=False)
 
-        # sub_df.to_csv('stacking/sc_lgb_test_0311_v2.csv', index=False)
+        # sub_df.to_csv('stacking/sc_lgb_test_l2.csv', index=False)
         # train['predict_score'] = oof
         # train['score'] = train_labels
-        # train[['score','predict_score']].to_csv('stacking/sc_lgb_train_0311_v2.csv', index=False)
+        # train[['score','predict_score']].to_csv('stacking/sc_lgb_train_l2.csv', index=False)
 
-        sub_df.to_csv('stacking/sc_lgb_l1_test_0311_v2.csv', index=False)
+        sub_df.to_csv('stacking/sc_lgb_l1_test.csv', index=False)
         train['predict_score'] = oof
         train['score'] = train_labels
-        train[['score','predict_score']].to_csv('stacking/sc_lgb_l1_train_0311_v2.csv', index=False)
+        train[['score','predict_score']].to_csv('stacking/sc_lgb_l1_train.csv', index=False)
 
 
 
 '''
+l2
 
- fold mae error is 14.660467711307472
-fold score is 0.06385505327391727
+ fold mae error is 14.658279639001737
+fold score is 0.0638639763150732
 
- fold mae error is 14.655782729987733
-fold score is 0.06387416185104298
 
- fold mae error is 14.649856439720336
-fold score is 0.06389834972939024
+l1
+
+fold score is 0.06387295110332751
 '''

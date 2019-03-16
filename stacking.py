@@ -53,20 +53,20 @@ if __name__ == "__main__":
     oof_list = list()
     predict_list = list()
 
-    v1_train = pd.read_csv('stacking/sc_lgb_train_0311_v2.csv', encoding='utf-8')
-    v1_test = pd.read_csv('stacking/sc_lgb_test_0311_v2.csv', encoding='utf-8')
+    v1_train = pd.read_csv('stacking/sc_lgb_train_l2.csv', encoding='utf-8')
+    v1_test = pd.read_csv('stacking/sc_lgb_test_l2.csv', encoding='utf-8')
     oof_list.append(v1_train['predict_score'])
     predict_list.append(v1_test['score'])
     labels = v1_train['score']
 
-    v4_train = pd.read_csv('stacking/sc_lgb_l1_train_0311_v2.csv', encoding='utf-8')
-    v4_test = pd.read_csv('stacking/sc_lgb_l1_test_0311_v2.csv', encoding='utf-8')
+    v4_train = pd.read_csv('stacking/sc_lgb_l1_train.csv', encoding='utf-8')
+    v4_test = pd.read_csv('stacking/sc_lgb_l1_test.csv', encoding='utf-8')
     oof_list.append(v4_train['predict_score'])
     predict_list.append(v4_test['score'])
 
 
-    v2_train = pd.read_csv('stacking/sc_xgb_train_0311_v1.csv', encoding='utf-8')
-    v2_test = pd.read_csv('stacking/sc_xgb_test_0311_v1.csv', encoding='utf-8')
+    v2_train = pd.read_csv('stacking/sc_xgb_train.csv', encoding='utf-8')
+    v2_test = pd.read_csv('stacking/sc_xgb_test.csv', encoding='utf-8')
     oof_list.append(v2_train['predict_score'])
     predict_list.append(v2_test['score'])
 
@@ -93,7 +93,7 @@ if __name__ == "__main__":
 
     v2_test['score'] = stacking_prediction
     v2_test['score'] = v2_test['score'].apply(lambda item: int(round(item)))
-    v2_test[['id','score']].to_csv("submit/sc_stacking_0312_v1.csv", index=False)
+    v2_test[['id','score']].to_csv("submit/sc_stacking.csv", index=False)
 
 
     import sys
@@ -125,7 +125,7 @@ if __name__ == "__main__":
 
     sub_df = test_score_df[['id', 'score']]
     sub_df['score'] = sub_df['score'].apply(lambda item: int(round(item)))
-    sub_df.to_csv('submittion.csv', index=False)
+    sub_df.to_csv('submit/sc_stacking_0314_v2.csv', index=False)
 
 
 
@@ -133,16 +133,9 @@ if __name__ == "__main__":
 
 
 '''
-stacking fold mae error is 14.666330839666823
-fold score is 0.06383115550375208
 
-stacking fold mae error is 14.6359780923003
-fold score is 0.06395506530496066
 
-stacking fold mae error is 14.63503905885699
-fold score is 0.06395890641753892
-
-stacking fold mae error is 14.623148940513563
-fold score is 0.06400758283797864
+stacking fold mae error is 14.621514970452084
+fold score is 0.0640142778655904
 '''
 

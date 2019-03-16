@@ -87,18 +87,18 @@ def feature_processing(train):
     train['当月花费的稳定性'] = train['用户账单当月总费用（元）'] / (train['用户近6个月平均消费值（元）'] + 1)
     train['use_left_rate'] = train['用户账单当月总费用（元）'] / (train['用户当月账户余额（元）'] + 1)
 
-    # train['是否去过高档商场'] = train['当月是否逛过福州仓山万达'] * train['当月是否到过福州山姆会员店']
-    # train['交通类应用使用次数'] = train['当月飞机类应用使用次数'] + train['当月火车类应用使用次数']
+    train['是否去过高档商场'] = train['当月是否逛过福州仓山万达'] * train['当月是否到过福州山姆会员店']
+    train['交通类应用使用次数'] = train['当月飞机类应用使用次数'] + train['当月火车类应用使用次数']
     train["用户年龄"] = train["用户年龄"].replace(0, train["用户年龄"].mode())
     train['当月账单是否超过平均消费额'] = train['用户账单当月总费用（元）'] - train['用户近6个月平均消费值（元）']
     train['缴费金额是否能覆盖当月账单'] = train['缴费用户最近一次缴费金额（元）'] - train['用户账单当月总费用（元）']
     train['最近一次缴费是否超过平均消费额'] = train['缴费用户最近一次缴费金额（元）'] - train['用户近6个月平均消费值（元）']
-    # train = log_feature(train)
+    #train = log_feature(train)
 
     std = StandardScaler()
     minMax = MinMaxScaler()
-    train['用户年龄归一化'] = std.fit_transform(train[['用户年龄']])
-    train.drop("用户年龄", axis=1, inplace=True)
+    #train['用户年龄归一化'] = std.fit_transform(train[['用户年龄']])
+    #train.drop("用户年龄", axis=1, inplace=True)
 
     return train
 
@@ -152,7 +152,7 @@ if __name__ == "__main__":
     preds_list = list()
     oof = np.zeros(train.shape[0])
     count_fold = 0
-    seeds = range(1, 1000, 250)
+    seeds = range(1, 1000, 500)
     for train_index, vali_index in kfold:
         print(count_fold)
         count_fold = count_fold + 1
@@ -190,13 +190,19 @@ if __name__ == "__main__":
                                'score': prediction})
         #sub_df['score'] = sub_df['score'].apply(lambda item: int(round(item)))
         #sub_df.to_csv('submit/sc_xgb_0301_v1.csv', index=False)
-        sub_df.to_csv('stacking/sc_xgb_test_0311_v1.csv', index=False)
+        sub_df.to_csv('stacking/sc_xgb_test.csv', index=False)
         train['predict_score'] = oof
         train['score'] = train_labels
-        train[[ 'score', 'predict_score']].to_csv('stacking/sc_xgb_train_0311_v1.csv', index=False)
+        train[[ 'score', 'predict_score']].to_csv('stacking/sc_xgb_train.csv', index=False)
 '''
 
 
  fold mae error is 14.69114962097168
 fold score is 0.0637301933991803
+
+ fold mae error is 14.690365858764649
+fold score is 0.06373337683782557
+
+ fold mae error is 14.679172265625
+fold score is 0.06377887703883443
 '''
